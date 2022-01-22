@@ -8,7 +8,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,14 +17,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Service
-public final class Mon implements Disposable {
+public final class Sputnik implements Disposable {
 
   private final AtomicBoolean myStarted = new AtomicBoolean();
   private final AtomicBoolean myStop = new AtomicBoolean();
   private final ArrayBlockingQueue<Cmd> myCmds = new ArrayBlockingQueue<>(16 * 1024);
   private final Hist myHist = new Hist();
-  private final Map<String, Cache> myCaches = new ConcurrentHashMap<>();
-  private final Map<String, CacheUi> myCacheUis = new ConcurrentHashMap<>();
   private final AtomicReference<HistUi> myHistUi = new AtomicReference<>();
 
   private final Lock myUpdatedLock = new ReentrantLock();
@@ -67,10 +64,6 @@ public final class Mon implements Disposable {
     myCmds.offer(new ClearCmd(histName));
   }
 
-  void compute(String id, String cmd) {
-    //myCmds.offer(new ComputeCmd(id,cmd));
-  }
-
   @Override
   public void dispose() {
     myStop.set(true);
@@ -110,33 +103,6 @@ public final class Mon implements Disposable {
         HistCmd histCmd = (HistCmd) cmd;
         myHist.myMap.merge(histCmd.myBucketName, 1, Integer::sum);
       }
-      if (cmd instanceof ComputeCmd) {
-        String id = ((ComputeCmd) cmd).myId;
-        String cacheCmd = ((ComputeCmd) cmd).myCmd;
-        if ("clear".equals(cacheCmd)) {
-          Cache cache = myCaches.get(id);
-          if (cache != null) {
-            cache.myTotalCount = 0;
-            cache.myHitCount = 0;
-          }
-        }
-        else if ("total".equals(cacheCmd)) {
-          Cache cache = myCaches.get(id);
-          if (cache == null) {
-            cache = new Cache();
-            myCaches.put(id, cache);
-          }
-          cache.myTotalCount++;
-        }
-        else if ("hit".equals(cacheCmd)) {
-          Cache cache = myCaches.get(id);
-          if (cache == null) {
-            cache = new Cache();
-            myCaches.put(id, cache);
-          }
-          cache.myHitCount++;
-        }
-      }
     }
 
     List<String> vals = new ArrayList<>(myHist.myMap.keySet());
@@ -152,8 +118,8 @@ public final class Mon implements Disposable {
       counts[i] = itemCount;
       total += itemCount;
     }
-    //if (myHistUi.get() == null)
-      myHistUi.set(new HistUi(vals, counts, total));
+
+    myHistUi.set(new HistUi(vals, counts, total));
 
     myUpdatedLock.lock();
     try {
@@ -213,73 +179,5 @@ public final class Mon implements Disposable {
       myHistName = histName;
       myBucketName = bucketName;
     }
-  }
-
-  private static class ComputeCmd implements Cmd {
-    private final String myId;
-    private final String myCmd;
-
-    public ComputeCmd(String id, String cmd) {
-      this.myId = id;
-      this.myCmd = cmd;
-    }
-  }
-
-  private static class Cache {
-    private long myTotalCount;
-    private long myHitCount;
-  }
-
-  static class CacheUi {
-    private String myId = "nothing";
-    private long myPrevTotal;
-    private long myPrevHit;
-    long myTotal[] = new long[128];
-    long myHit[] = new long[128];
-    int myIdx;
-
-    void add(long total, long hit) {
-      long totalDiff = total - myPrevTotal;
-      long hitDiff = hit - myPrevHit;
-      myTotal[myIdx] = totalDiff;
-      myHit[myIdx] = hitDiff;
-      myIdx = (myIdx + 1) % 128;
-      myPrevTotal = total;
-      myPrevHit = hit;
-    }
-
-    void drainTo(long[] total, long[]hit) {
-      int idx = (myIdx + 1) % 128;
-      for (int i = 0; i < 128; i++) {
-        total[i] = myTotal[idx];
-        hit[i] = myHit[idx];
-        idx = (idx + 1) % 128;
-      }
-    }
-
-    public String getId() {
-      return myId;
-    }
-  }
-
-  void sampleCaches() {
-    for (String cacheId : myCaches.keySet()) {
-      Cache cache = myCaches.get(cacheId);
-      CacheUi cacheUi = myCacheUis.get(cacheId);
-      if (cacheUi == null){
-        cacheUi = new CacheUi();
-        cacheUi.myId = cacheId;
-        myCacheUis.put(cacheId, cacheUi);
-      }
-      cacheUi.add(cache.myTotalCount, cache.myHitCount);
-    }
-  }
-
-  CacheUi getCacheUi() {
-    Set<String> keys = myCacheUis.keySet();
-    if (!keys.isEmpty()) {
-      return myCacheUis.get(keys.iterator().next());
-    }
-    return new CacheUi();
   }
 }

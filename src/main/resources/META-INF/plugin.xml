@@ -15,11 +15,11 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="sputnik" secondary="false" icon="AllIcons.General.Modified" anchor="right"
-                    factoryClass="sputnik.MonTWFactory"/>
+                    factoryClass="sputnik.SputnikTW"/>
     </extensions>
 
     <projectListeners>
-        <listener class="sputnik.MonExecListener" topic="com.intellij.execution.ExecutionListener"/>
+        <listener class="sputnik.SputnikOutputListener" topic="com.intellij.execution.ExecutionListener"/>
     </projectListeners>
     <!--
     <project-components>

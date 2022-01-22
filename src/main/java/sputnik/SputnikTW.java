@@ -17,41 +17,41 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class MonTWFactory implements ToolWindowFactory, DumbAware {
+public class SputnikTW implements ToolWindowFactory, DumbAware {
   @Override
   public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
     // 'clear histogram' button in ui
-    Mon mon = project.getService(Mon.class);
-    MonTW tw = new MonTW(toolWindow, mon);
+    Sputnik s = project.getService(Sputnik.class);
+    SputnikPanel panel = new SputnikPanel(toolWindow, s);
     ContentFactory contentFactory = ContentFactory.SERVICE.getInstance();
-    Content content = contentFactory.createContent(tw, "", false);
-    content.setPreferredFocusedComponent(() -> tw);
+    Content content = contentFactory.createContent(panel, "", false);
+    content.setPreferredFocusedComponent(() -> panel);
     toolWindow.getContentManager().addContent(content);
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       int lastShown = 0;
-      while (mon.isRunning()) {
-        lastShown = mon.waitForUpdate(lastShown);
-        tw.scheduleRepaint();
+      while (s.isRunning()) {
+        lastShown = s.waitForUpdate(lastShown);
+        panel.scheduleRepaint();
       }
     });
   }
 
-  static class MonTW extends JPanel {
+  static class SputnikPanel extends JPanel {
     private final AtomicBoolean myScheduled = new AtomicBoolean(false);
     private final ToolWindow myTw;
-    private final Mon myMon;
+    private final Sputnik mySputnik;
     private final JBFont myFont;
-    volatile Mon.HistUi myHist;
+    volatile Sputnik.HistUi myHist;
 
-    public MonTW(@NotNull ToolWindow tw, @NotNull Mon mon) {
+    public SputnikPanel(@NotNull ToolWindow tw, @NotNull Sputnik sputnik) {
       myTw = tw;
-      myMon = mon;
+      mySputnik = sputnik;
       myFont = JBUI.Fonts.create(Font.MONOSPACED, 11);
     }
 
     void scheduleRepaint() {
       if (myScheduled.compareAndSet(false, true)) {
-        myHist = myMon.getHist();
+        myHist = mySputnik.getHist();
         repaint();
       }
     }
@@ -64,40 +64,8 @@ public class MonTWFactory implements ToolWindowFactory, DumbAware {
       g.setFont(myFont);
 
       int ystart = 30;
-      if (false) {
-        Mon.CacheUi cacheUi = myMon.getCacheUi();
-        ystart+=20;
-        long total[] = new long[128];
-        long hit[] = new long[128];
-        cacheUi.drainTo(total, hit);
 
-        long totalMin = Long.MAX_VALUE;
-        long totalMax = 0;
-        for (long t : total) {
-          totalMin = Math.min(totalMin, t);
-          totalMax = Math.max(totalMax, t);
-        }
-        int yrange = (int) (totalMax - totalMin);
-        int xs[] = new int[128];
-        int ys1[] = new int[128];
-        int ys2[] = new int[128];
-        int x = 10;
-        for (int i = 0; i < 128; i++) {
-          xs[i] = x;
-          x+=10;
-          ys1[i] = ystart + 100 - ((int)(((int)(total[i]-totalMin)) * 1.0/yrange)) * 100;
-          ys2[i] = ystart + 100 - ((int)(((int)(hit[i]-totalMin)) * 1.0/yrange)) * 100;
-        }
-        g.drawString(cacheUi.getId() + " " + (total[127] != 0 ? hit[127] * 100.0/ total[127] : ""), 10, ystart+20);
-        Color color = g.getColor();
-        g.setColor(JBColor.RED);
-        g.drawPolyline(xs, ys1, 128);
-        g.drawPolyline(xs, ys2, 128);
-        g.setColor(color);
-        ystart += 200;
-      }
-
-      Mon.HistUi hist = this.myHist;
+      Sputnik.HistUi hist = this.myHist;
       if (hist != null) {
         int size = hist.getSize();
         int total = hist.getTotal();
