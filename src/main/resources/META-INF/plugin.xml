@@ -1,0 +1,38 @@
+<idea-plugin>
+    <id>sputnik</id>
+    <name>Sputnik</name>
+    <vendor email="dmitry.neverov@gmail.com">me</vendor>
+
+    <idea-version since-build="213.1"/>
+
+    <version>1</version>
+
+    <description><![CDATA[
+        DESCR monitors the ide yada yada yada yada yada yada yada yada yada yada
+    ]]></description>
+
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="idemon" secondary="false" icon="AllIcons.General.Modified" anchor="right"
+                    factoryClass="idemon.MonTWFactory"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="idemon.MonExecListener" topic="com.intellij.execution.ExecutionListener"/>
+    </projectListeners>
+    <!--
+    <project-components>
+        <component>
+            <implementation-class>xxx</implementation-class>
+        </component>
+    </project-components>
+    -->
+
+    <!--
+    <actions>
+        <action class="xxx" text="xxx"/>
+    </actions>
+    -->
+
+</idea-plugin>
