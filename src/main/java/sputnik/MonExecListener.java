@@ -1,4 +1,4 @@
-package idemon;
+package sputnik;
 
 import com.intellij.execution.ExecutionListener;
 import com.intellij.execution.process.ProcessAdapter;

@@ -1,4 +1,4 @@
-package idemon;
+package sputnik;
 
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.application.ApplicationManager;

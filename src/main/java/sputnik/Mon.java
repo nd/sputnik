@@ -1,4 +1,4 @@
-package idemon;
+package sputnik;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;

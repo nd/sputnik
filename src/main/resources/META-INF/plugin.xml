@@ -14,12 +14,12 @@
     <depends>com.intellij.modules.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow id="idemon" secondary="false" icon="AllIcons.General.Modified" anchor="right"
-                    factoryClass="idemon.MonTWFactory"/>
+        <toolWindow id="sputnik" secondary="false" icon="AllIcons.General.Modified" anchor="right"
+                    factoryClass="sputnik.MonTWFactory"/>
     </extensions>
 
     <projectListeners>
-        <listener class="idemon.MonExecListener" topic="com.intellij.execution.ExecutionListener"/>
+        <listener class="sputnik.MonExecListener" topic="com.intellij.execution.ExecutionListener"/>
     </projectListeners>
     <!--
     <project-components>
