@@ -8,7 +8,19 @@
     <version>1</version>
 
     <description><![CDATA[
-        DESCR monitors the ide yada yada yada yada yada yada yada yada yada yada
+        Allows to debug programs with printf.<br/>
+
+        Parses program console output, detects lines in a special format, and builds a histogram shown in a dedicated tool window.<br/>
+
+        Commands have the format '0x01cmd(args)\n', i.e. byte 1 followed by a command name and command arguments in parentheses.
+        In java one can print a command like this: System.out.println("\01h('Histogram name','bucket name')").<br/>
+
+        Supported commands:<br/>
+
+        h('histName','bucketName') - adds 1 to the bucket in the specified histogram<br/>
+        hr('histName') - resets the specified histogram<br/>
+
+        A lot of printing will slow down the program, so it is suitable only for quick experiments.<br/>
     ]]></description>
 
     <depends>com.intellij.modules.lang</depends>
@@ -21,18 +33,4 @@
     <projectListeners>
         <listener class="sputnik.SputnikOutputListener" topic="com.intellij.execution.ExecutionListener"/>
     </projectListeners>
-    <!--
-    <project-components>
-        <component>
-            <implementation-class>xxx</implementation-class>
-        </component>
-    </project-components>
-    -->
-
-    <!--
-    <actions>
-        <action class="xxx" text="xxx"/>
-    </actions>
-    -->
-
 </idea-plugin>
