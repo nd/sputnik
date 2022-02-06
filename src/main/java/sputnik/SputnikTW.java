@@ -20,6 +20,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.font.TextLayout;
+import java.awt.geom.GeneralPath;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,12 +47,15 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
   }
 
   static class SputnikPanel extends JPanel {
+    private static final JBColor[] colors = new JBColor[]{JBColor.RED, JBColor.BLUE, JBColor.GREEN, JBColor.YELLOW};
+
     private final AtomicBoolean myScheduled = new AtomicBoolean(false);
     private final ToolWindow myTw;
     private final Sputnik mySputnik;
     private final Font myFont;
     private final Font myBoldFont;
-    private final List<Pair<Rectangle2D, String>> myCloseBounds = new ArrayList<>();
+    private final List<CloseBounds> myCloseBounds = new ArrayList<>();
+
 
     public SputnikPanel(@NotNull ToolWindow tw, @NotNull Sputnik sputnik) {
       myTw = tw;
@@ -64,10 +68,14 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
         public void mouseClicked(MouseEvent e) {
           super.mouseClicked(e);
           Point point = e.getPoint();
-          for (Pair<Rectangle2D, String> b : myCloseBounds) {
-            if (b.first.contains(point)) {
+          for (CloseBounds b : myCloseBounds) {
+            if (b.rect.contains(point)) {
               ApplicationManager.getApplication().executeOnPooledThread(() -> {
-                mySputnik.delete(b.second);
+                if ("hist".equals(b.type)) {
+                  mySputnik.deleteHist(b.name);
+                } else if ("chart".equals(b.type)) {
+                  mySputnik.deleteChart(b.name);
+                }
                 scheduleRepaint();
               });
               break;
@@ -87,6 +95,7 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       super.paintComponent(g);
       myScheduled.set(false);
       List<Sputnik.HistUi> myHists = mySputnik.getHist();
+      List<Sputnik.ChartUi> charts = mySputnik.getCharts();
 
       UISettings.setupAntialiasing(g);
       g.setFont(myFont);
@@ -94,6 +103,11 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       int y = 30;
       for (Sputnik.HistUi hist : myHists) {
         y = drawHist(g, y, hist, true);
+        y += 20;
+      }
+
+      for (Sputnik.ChartUi chart : charts) {
+        y += drawChart(g, y, chart, true);
         y += 20;
       }
 
@@ -108,6 +122,11 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       y = 30;
       for (Sputnik.HistUi hist : myHists) {
         y = drawHist(g, y, hist, false);
+        y += 20;
+      }
+
+      for (Sputnik.ChartUi chart : charts) {
+        y += drawChart(g, y, chart, false);
         y += 20;
       }
     }
@@ -126,16 +145,16 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
           namePrefix += ", ";
         }
         String title = namePrefix + "total: " + total;
-        TextLayout tl = new TextLayout(title, myBoldFont, ((Graphics2D)g).getFontRenderContext());
-        tl.draw((Graphics2D)g, 10, y);
+        TextLayout tl = new TextLayout(title, myBoldFont, ((Graphics2D) g).getFontRenderContext());
+        tl.draw((Graphics2D) g, 10, y);
         Rectangle2D bounds = tl.getBounds();
         bounds.setRect(10 + (int) bounds.getMaxX() + 5,
-                bounds.getY() + y - 1 - ((AllIcons.Actions.Close.getIconHeight() - rowHeight)/2.0),
+                bounds.getY() + y - 1 - ((AllIcons.Actions.Close.getIconHeight() - rowHeight) / 2.0),
                 AllIcons.Actions.Close.getIconWidth(),
                 AllIcons.Actions.Close.getIconHeight());
 
-        myCloseBounds.add(Pair.create(bounds, hist.getHistName()));
-        AllIcons.Actions.Close.paintIcon(this, g, (int)bounds.getX(), (int)bounds.getY());
+        myCloseBounds.add(new CloseBounds(bounds, "hist", hist.getHistName()));
+        AllIcons.Actions.Close.paintIcon(this, g, (int) bounds.getX(), (int) bounds.getY());
       }
 
       y += rowHeight;
@@ -165,6 +184,85 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       }
 
       return y;
+    }
+
+    private int drawChart(Graphics g, int y, Sputnik.ChartUi chart, boolean dryRun) {
+      int max = 0;
+      for (Sputnik.SeriesUi series : chart.series.values()) {
+        for (int count : series.counts) {
+          max = Math.max(max, count);
+        }
+      }
+
+      int rowHeight = 10;
+
+      if (!dryRun) {
+        TextLayout tl = new TextLayout(chart.name, myBoldFont, ((Graphics2D) g).getFontRenderContext());
+        tl.draw((Graphics2D) g, 10, y);
+        Rectangle2D bounds = tl.getBounds();
+        bounds.setRect(10 + (int) bounds.getMaxX() + 5,
+                bounds.getY() + y - 1 - ((AllIcons.Actions.Close.getIconHeight() - rowHeight) / 2.0),
+                AllIcons.Actions.Close.getIconWidth(),
+                AllIcons.Actions.Close.getIconHeight());
+
+        myCloseBounds.add(new CloseBounds(bounds, "chart", chart.name));
+        AllIcons.Actions.Close.paintIcon(this, g, (int) bounds.getX(), (int) bounds.getY());
+      }
+
+      y += rowHeight;
+
+      int rectHeight = 100;
+      int tickSize = 30;
+      y += rectHeight; // now at the bottom of the chart
+      Color prevColor = g.getColor();
+      if (!dryRun) {
+        g.drawRect(10, y - rectHeight, (chart.size - 1) * tickSize, rectHeight);
+        g.drawString("0", 10 + (chart.size - 1) * tickSize + 10, y);
+        g.drawString(String.valueOf(max), 10 + (chart.size - 1) * tickSize + 10, y - rectHeight + rowHeight);
+        if (max != 0) {
+          float k = 100.0f / max;
+          int colorIdx = 0;
+          for (Sputnik.SeriesUi series : chart.series.values()) {
+            JBColor color = colors[colorIdx];
+            g.setColor(color);
+            int x = 10;
+            GeneralPath path = new GeneralPath();
+            path.moveTo(x, y - k * series.counts[(series.writeIdx) % chart.size]);
+            x += tickSize;
+            for (int i = 1; i < chart.size; i++) {
+              path.lineTo(x, y - k * series.counts[(series.writeIdx + i) % chart.size]);
+              x += tickSize;
+            }
+            ((Graphics2D) g).draw(path);
+            colorIdx = (colorIdx + 1) % colors.length;
+          }
+        }
+      }
+
+      y += 2 * rowHeight;
+      int colorIdx = 0;
+      for (Sputnik.SeriesUi series : chart.series.values()) {
+        JBColor color = colors[colorIdx];
+        g.setColor(color);
+        g.drawLine(10, y - 5, 10 + tickSize, y - 5);
+        g.drawString(series.name, 10 + tickSize + 10, y);
+        y += 2 * rowHeight;
+        colorIdx = (colorIdx + 1) % colors.length;
+      }
+      g.setColor(prevColor);
+      return y;
+    }
+
+    static class CloseBounds {
+      private final Rectangle2D rect;
+      private final String type;
+      private final String name;
+
+      public CloseBounds(Rectangle2D rect, String type, String name) {
+        this.rect = rect;
+        this.type = type;
+        this.name = name;
+      }
     }
   }
 }

@@ -79,6 +79,31 @@ public class SputnikOutputListener implements ExecutionListener {
             mySputnik.hr(histName);
           }
         }
+        if (c1 == 'c') {
+          //\u0001c("chartName","seriesName") - add 1 to the current count of the series in the given chart
+          //\u0001cr - doesn't make sense: char will clear itself in 10 seconds
+          if (text.charAt(2) == '(') {
+            int idx = 3;
+            String chartName = parseString(text, idx);
+            if (chartName == null) {
+              return;
+            }
+            idx += chartName.length() + 2;
+            if (text.charAt(idx) != ',') {
+              return;
+            }
+            idx++;
+            String seriesName = parseString(text, idx);
+            if (seriesName == null) {
+              return;
+            }
+            idx += seriesName.length() + 2;
+            if (idx != text.length() - 1) {
+              return;
+            }
+            mySputnik.c(chartName, seriesName);
+          }
+        }
       }
     }
   }

@@ -3,6 +3,7 @@ package sputnik;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -22,6 +23,10 @@ public final class Sputnik implements Disposable {
   // hist name -> (bucket name -> hit count)
   private final Map<String, Map<String, Integer>> myHists = new HashMap<>();
 
+  // chart name -> (series -> count)
+  private final Map<String, Map<String, Integer>> myCharts = new HashMap<>();
+  private final Map<String, ChartUi> myChartUis = new HashMap<>();
+
   private final Lock myUpdatedLock = new ReentrantLock();
   private final Condition myUpdated = myUpdatedLock.newCondition();
   private final AtomicInteger myUpdateCounter = new AtomicInteger();
@@ -31,6 +36,7 @@ public final class Sputnik implements Disposable {
   void start() {
     if (myStarted.compareAndSet(false, true)) {
       ApplicationManager.getApplication().executeOnPooledThread(this::processQueue);
+      AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(this::sampleCharts, 0, 1, TimeUnit.SECONDS);
     }
   }
 
@@ -60,16 +66,38 @@ public final class Sputnik implements Disposable {
   }
 
   void hr(@NotNull String histName) {
-    myCmds.offer(new ClearCmd(histName));
+    myCmds.offer(new ClearHistCmd(histName));
   }
 
-  void delete(@NotNull String histName) {
-    myCmds.add(new DeleteCmd(histName)); // not offer, because we don't want to miss click on close in UI
+  void c(@NotNull String chartName, @NotNull String seriesName) {
+    myCmds.offer(new ChartCmd(chartName, seriesName));
+  }
+
+  void deleteHist(@NotNull String histName) {
+    myCmds.add(new DeleteCmd("hist", histName)); // not offer, because we don't want to miss click on close in UI
+  }
+
+  void deleteChart(@NotNull String chartName) {
+    myCmds.add(new DeleteCmd("chart", chartName)); // not offer, because we don't want to miss click on close in UI
   }
 
   @Override
   public void dispose() {
     myStop.set(true);
+  }
+
+  @NotNull List<ChartUi> getCharts() {
+    List<ChartUi> result = new ArrayList<>();
+    myLock.readLock().lock();
+    try {
+      for (ChartUi chartui : myChartUis.values()) {
+        result.add(chartui.copy());
+      }
+    } finally {
+      myLock.readLock().unlock();
+    }
+    result.sort(Comparator.comparing(o -> o.name));
+    return result;
   }
 
   @NotNull List<HistUi> getHist() {
@@ -136,23 +164,115 @@ public final class Sputnik implements Disposable {
     }
   }
 
+  static class SeriesUi {
+    final String name;
+    final int[] counts;
+    int writeIdx = 0;
+
+    SeriesUi(String name, int size) {
+      this.name = name;
+      counts = new int[size];
+    }
+
+    void addCount(int count) {
+      counts[writeIdx] = count;
+      writeIdx = (writeIdx + 1) % counts.length;
+    }
+
+    SeriesUi copy() {
+      SeriesUi result = new SeriesUi(name, counts.length);
+      System.arraycopy(counts, 0, result.counts, 0, counts.length);
+      result.writeIdx = writeIdx;
+      return result;
+    }
+  }
+
+  static class ChartUi {
+    final int size = 10;
+    final String name;
+    final TreeMap<String, SeriesUi> series = new TreeMap<>();
+
+    public ChartUi(String name) {
+      this.name = name;
+    }
+
+    void addCount(String seriesName, int count) {
+      SeriesUi seriesUi = series.get(seriesName);
+      if (seriesUi == null) {
+        seriesUi = new SeriesUi(seriesName, size);
+        series.put(seriesName, seriesUi);
+      }
+      seriesUi.addCount(count);
+    }
+
+    ChartUi copy() {
+      ChartUi result = new ChartUi(name);
+      for (SeriesUi value : series.values()) {
+        result.series.put(value.name, value.copy());
+      }
+      return result;
+    }
+  }
+
+  private void sampleCharts() {
+    boolean updated = false;
+    myLock.writeLock().lock(); // writeLock because we will reset counters to 0
+    try {
+      for (Map.Entry<String, Map<String, Integer>> kv : myCharts.entrySet()) {
+        updated = true;
+        String chartName = kv.getKey();
+        ChartUi chartUi = myChartUis.get(chartName);
+        if (chartUi == null) {
+          chartUi = new ChartUi(chartName);
+          myChartUis.put(chartName, chartUi);
+        }
+        Map<String, Integer> counters = kv.getValue();
+        for (Map.Entry<String, Integer> counterVal : counters.entrySet()) {
+          String series = counterVal.getKey();
+          Integer val = counterVal.getValue();
+          chartUi.addCount(series, val);
+          counterVal.setValue(0);
+        }
+      }
+    } finally {
+      myLock.writeLock().unlock();
+    }
+
+    if (updated) {
+      myUpdatedLock.lock();
+      try {
+        myUpdateCounter.incrementAndGet();
+        myUpdated.signal();
+      } finally {
+        myUpdatedLock.unlock();
+      }
+    }
+  }
+
   private void processCmds(@NotNull List<Cmd> cmds) {
     myLock.writeLock().lock();
     try {
       for (Cmd cmd : cmds) {
-        if (cmd instanceof ClearCmd) {
-          Map<String, Integer> hist = myHists.get(((ClearCmd) cmd).myHistName);
+        if (cmd instanceof ClearHistCmd) {
+          Map<String, Integer> hist = myHists.get(((ClearHistCmd) cmd).myHistName);
           if (hist != null) {
             hist.clear();
           }
-        }
-        else if (cmd instanceof HistCmd) {
+        } else if (cmd instanceof HistCmd) {
           HistCmd histCmd = (HistCmd) cmd;
           Map<String, Integer> hist = myHists.computeIfAbsent(histCmd.myHistName, k -> new HashMap<>());
           hist.merge(histCmd.myBucketName, 1, Integer::sum);
-        }
-        else if (cmd instanceof DeleteCmd) {
-          myHists.remove(((DeleteCmd) cmd).myHistName);
+        } else if (cmd instanceof ChartCmd) {
+          ChartCmd chartCmd = (ChartCmd) cmd;
+          Map<String, Integer> series = myCharts.computeIfAbsent(chartCmd.myChartName, k -> new HashMap<>());
+          series.merge(chartCmd.mySeriesName, 1, Integer::sum);
+        } else if (cmd instanceof DeleteCmd) {
+          if (((DeleteCmd) cmd).myType.equals("hist")) {
+            myHists.remove(((DeleteCmd) cmd).myName);
+          } else if (((DeleteCmd) cmd).myType.equals("chart")) {
+            myCharts.remove(((DeleteCmd) cmd).myName);
+            myChartUis.remove(((DeleteCmd) cmd).myName);
+          }
         }
       }
     } finally {
@@ -210,19 +330,21 @@ public final class Sputnik implements Disposable {
   interface Cmd {
   }
 
-  private static class ClearCmd implements Cmd {
+  private static class ClearHistCmd implements Cmd {
     private final String myHistName;
 
-    public ClearCmd(@NotNull String histName) {
+    public ClearHistCmd(@NotNull String histName) {
       myHistName = histName;
     }
   }
 
   private static class DeleteCmd implements Cmd {
-    private final String myHistName;
+    private final String myType;
+    private final String myName;
 
-    public DeleteCmd(@NotNull String histName) {
-      myHistName = histName;
+    public DeleteCmd(@NotNull String type, @NotNull String name) {
+      myType = type;
+      myName = name;
     }
   }
 
@@ -233,6 +355,16 @@ public final class Sputnik implements Disposable {
     public HistCmd(@NotNull String histName, @NotNull String bucketName) {
       myHistName = histName;
       myBucketName = bucketName;
+    }
+  }
+
+  private static class ChartCmd implements Cmd {
+    private final String myChartName;
+    private final String mySeriesName;
+
+    public ChartCmd(@NotNull String chartName, @NotNull String seriesName) {
+      myChartName = chartName;
+      mySeriesName = seriesName;
     }
   }
 }
