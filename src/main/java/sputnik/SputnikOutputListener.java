@@ -20,6 +20,7 @@ public class SputnikOutputListener implements ExecutionListener {
 
   private static class ProcListener extends ProcessAdapter {
     private final Sputnik mySputnik;
+    private final StringBuilder myPending = new StringBuilder();
 
     public ProcListener(@NotNull Sputnik s) {
       mySputnik = s;
@@ -27,7 +28,18 @@ public class SputnikOutputListener implements ExecutionListener {
 
     @Override
     public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
-      String text = StringUtil.trimTrailing(event.getText());
+      String eventText = event.getText();
+      String text;
+      if (eventText.length() == 0) {
+        return;
+      }
+      if (eventText.charAt(eventText.length() - 1) == '\n') {
+        text = StringUtil.trimTrailing(myPending + eventText);
+        myPending.setLength(0);
+      } else {
+        myPending.append(eventText);
+        return;
+      }
       // command starts with \u0001 and is at least 4 chars long: \u0001c()
       if (text.startsWith("\u0001") && text.length() >= 4 && text.charAt(text.length() - 1) == ')') {
         char c1 = text.charAt(1);
