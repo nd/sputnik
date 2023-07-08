@@ -104,6 +104,18 @@ public class SputnikOutputListener implements ExecutionListener {
             mySputnik.c(chartName, seriesName);
           }
         }
+        //\u0001Hi(int)
+        if (c1 == 'H' && text.length() > 4 &&
+            text.charAt(2) == 'i' && text.charAt(3) == '(' && text.charAt(text.length() - 1) == ')') {
+          try {
+            int endIdx = text.length() - 1;
+            long value = Long.parseLong(text, 4, endIdx, 10);
+            mySputnik.Hi(value);
+          }
+          catch(Exception e) {
+            //ignore
+          }
+        }
       }
     }
   }

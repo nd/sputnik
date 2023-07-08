@@ -27,6 +27,11 @@ public final class Sputnik implements Disposable {
   private final Map<String, Map<String, Integer>> myCharts = new HashMap<>();
   private final Map<String, ChartUi> myChartUis = new HashMap<>();
 
+  private final RingBuf myRingBuf = new RingBuf(10);
+  private final RingBuf myRingBufCopy = new RingBuf(10);
+  private final float[] myHi = new float[100];
+  private HiUi myLastHi = null;
+
   private final Lock myUpdatedLock = new ReentrantLock();
   private final Condition myUpdated = myUpdatedLock.newCondition();
   private final AtomicInteger myUpdateCounter = new AtomicInteger();
@@ -73,12 +78,20 @@ public final class Sputnik implements Disposable {
     myCmds.offer(new ChartCmd(chartName, seriesName));
   }
 
+  void Hi(long value) {
+    myCmds.offer(new HiCmd(value));
+  }
+
   void deleteHist(@NotNull String histName) {
     myCmds.add(new DeleteCmd("hist", histName)); // not offer, because we don't want to miss click on close in UI
   }
 
   void deleteChart(@NotNull String chartName) {
     myCmds.add(new DeleteCmd("chart", chartName)); // not offer, because we don't want to miss click on close in UI
+  }
+
+  void deleteHi() {
+    myCmds.add(new DeleteCmd("hi", ""));
   }
 
   @Override
@@ -141,6 +154,65 @@ public final class Sputnik implements Disposable {
 
     histUis.sort(Comparator.comparing(h -> h.myHistName));
     return histUis;
+  }
+
+  @NotNull List<HiUi> getHis() {
+    List<HiUi> result = new ArrayList<>();
+    myLock.readLock().lock();
+    try {
+      if (myRingBuf.writeIdx == 0) {
+        return result;
+      }
+      if (myLastHi != null && myLastHi.myLastWriteIdx == myRingBuf.writeIdx) {
+        result.add(myLastHi);
+        return result;
+      }
+      myRingBuf.copyTo(myRingBufCopy);
+    } finally {
+      myLock.readLock().unlock();
+    }
+
+    long min = Long.MAX_VALUE;
+    long max = 0;
+    long startIdx = Math.max(0, myRingBufCopy.writeIdx - myRingBufCopy.data.length);
+    for (long idx = startIdx; idx < myRingBufCopy.writeIdx; idx++) {
+      long elem = myRingBufCopy.read(idx);
+      min = Math.min(elem, min);
+      max = Math.max(elem, max);
+    }
+
+    Arrays.fill(myHi, 0);
+
+    min--;
+    max++;
+
+    if (myLastHi != null) {
+      // tried smoothness (http://number-none.com/product/Toward%20Better%20Scripting,%20Part%201/index.html)
+      // don't like how it works: if smoothing too much it is too slow, but still changing,
+      // realized I don't want them to change at all. It is easier to reset hist when needed.
+      if (min > myLastHi.myMin) {
+          min = myLastHi.myMin;
+      }
+      if (max < myLastHi.myMax) {
+          max = myLastHi.myMax;
+      }
+    }
+
+    double width = max - min;
+    double oneOverBucketWidth = 100.0 / width;
+    float weight = (float) (100.0 / (myRingBufCopy.writeIdx - startIdx));
+    float maxPercent = 0;
+    for (long idx = startIdx; idx < myRingBufCopy.writeIdx; idx++) {
+      long elem = myRingBufCopy.read(idx);
+      int bucket = (int) ((elem - min) * oneOverBucketWidth);
+      myHi[bucket] += weight;
+      maxPercent = Math.max(myHi[bucket], maxPercent);
+    }
+
+    HiUi hi = new HiUi(myHi, min, max, maxPercent, myRingBufCopy.writeIdx);
+    myLastHi = hi;
+    result.add(hi);
+    return result;
   }
 
   private void processQueue() {
@@ -272,7 +344,12 @@ public final class Sputnik implements Disposable {
           } else if (((DeleteCmd) cmd).myType.equals("chart")) {
             myCharts.remove(((DeleteCmd) cmd).myName);
             myChartUis.remove(((DeleteCmd) cmd).myName);
+          } else if (((DeleteCmd) cmd).myType.equals("hi")) {
+            myRingBuf.clear();
+            myLastHi = null;
           }
+        } else if (cmd instanceof HiCmd) {
+          myRingBuf.write(((HiCmd) cmd).myValue);
         }
       }
     } finally {
@@ -327,6 +404,21 @@ public final class Sputnik implements Disposable {
     }
   }
 
+  static class HiUi {
+    final float[] myHist;
+    final long myMin;
+    final long myMax;
+    final float myMaxPercent;
+    final long myLastWriteIdx;
+    public HiUi(float[] hist, long min, long max, float maxPercent, long lastWriteIdx) {
+      myHist = hist;
+      myMin = min;
+      myMax = max;
+      myMaxPercent = maxPercent;
+      myLastWriteIdx = lastWriteIdx;
+    }
+  }
+
   interface Cmd {
   }
 
@@ -365,6 +457,43 @@ public final class Sputnik implements Disposable {
     public ChartCmd(@NotNull String chartName, @NotNull String seriesName) {
       myChartName = chartName;
       mySeriesName = seriesName;
+    }
+  }
+
+  private static class HiCmd implements Cmd {
+    private final long myValue;
+
+    public HiCmd(long value) {
+      myValue = value;
+    }
+  }
+
+  static class RingBuf {
+    private final long[] data;
+    private final int mask;
+    private long writeIdx = 0;
+
+    public RingBuf(int pow2) {
+      mask = (1 << pow2) - 1;
+      data = new long[1 << pow2];
+    }
+
+    void write(long value) {
+      data[(int)(writeIdx & mask)] = value;
+      writeIdx++;
+    }
+
+    long read(long idx) {
+      return data[(int)(idx & mask)];
+    }
+
+    void copyTo(RingBuf buf) {
+      buf.writeIdx = writeIdx;
+      System.arraycopy(data, 0, buf.data, 0, data.length);
+    }
+
+    void clear() {
+      writeIdx = 0;
     }
   }
 }

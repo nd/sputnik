@@ -34,7 +34,7 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
     JBScrollPane scrollPane = new JBScrollPane(panel,
             ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-    Content content = ContentFactory.SERVICE.getInstance().createContent(scrollPane, "", false);
+    Content content = ContentFactory.getInstance().createContent(scrollPane, "", false);
     content.setPreferredFocusedComponent(() -> scrollPane);
     toolWindow.getContentManager().addContent(content);
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -75,6 +75,8 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
                   mySputnik.deleteHist(b.name);
                 } else if ("chart".equals(b.type)) {
                   mySputnik.deleteChart(b.name);
+                } else if ("hi".equals(b.type)) {
+                  mySputnik.deleteHi();
                 }
                 scheduleRepaint();
               });
@@ -96,6 +98,7 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       myScheduled.set(false);
       List<Sputnik.HistUi> myHists = mySputnik.getHist();
       List<Sputnik.ChartUi> charts = mySputnik.getCharts();
+      List<Sputnik.HiUi> his = mySputnik.getHis();
 
       UISettings.setupAntialiasing(g);
       g.setFont(myFont);
@@ -110,6 +113,8 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
         y += drawChart(g, y, chart, true);
         y += 20;
       }
+
+      y += his.size() * (200 + 20);
 
       Dimension size = getSize();
       if (y != size.height) {
@@ -129,6 +134,71 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
         y += drawChart(g, y, chart, false);
         y += 20;
       }
+
+      for (Sputnik.HiUi hi : his) {
+        y += drawHi(g, y, hi);
+        y += 20;
+      }
+    }
+
+    private int drawHi(Graphics g, int y, Sputnik.HiUi hi) {
+      int heightPx = 2;
+      int widthPx = 2;
+      g.setColor(JBColor.BLACK);
+      g.drawRect(10, y, widthPx * 100, heightPx * 100);
+      float scale = 100.0f / hi.myMaxPercent;
+      int yStart = y;
+      g.drawLine(
+              10 + widthPx * 25, yStart,
+              10 + widthPx * 25, yStart + heightPx * 100);
+      g.drawLine(
+              10 + widthPx * 50, yStart,
+              10 + widthPx * 50, yStart + heightPx * 100);
+      g.drawLine(
+              10 + widthPx * 75, yStart,
+              10 + widthPx * 75, yStart + heightPx * 100);
+
+      g.setColor(JBColor.RED);
+      for (float i : hi.myHist) {
+        g.fillRect(10, y, widthPx * (int) (i * scale), heightPx);
+        y += heightPx;
+      }
+
+      long width = hi.myMax - hi.myMin;
+      long step;
+      if (width > 10) {
+        step = width / 10;
+      } else {
+        step = 1;
+      }
+
+      // draw first label with text layout to get bounds, needed for close icon
+      g.setColor(JBColor.BLACK);
+      int labelsXOffset = 10 + widthPx * 100 + 10;
+      TextLayout tl = new TextLayout("" + hi.myMin, myFont, ((Graphics2D) g).getFontRenderContext());
+      tl.draw((Graphics2D) g, labelsXOffset, yStart + 5);
+      Rectangle2D bounds = tl.getBounds();
+
+      for (int i = 1; i <= 10; i++) {
+        long val = hi.myMin + i * step;
+        if (val > hi.myMax) {
+          break;
+        }
+        g.drawString("" + val, labelsXOffset, yStart + 5 + i * heightPx * 10);
+      }
+
+      AllIcons.Actions.Close.paintIcon(this, g,
+              (int) (labelsXOffset + bounds.getWidth()),
+              yStart - AllIcons.Actions.Close.getIconHeight());
+
+      bounds.setRect(
+              labelsXOffset + bounds.getWidth(),
+              yStart - AllIcons.Actions.Close.getIconHeight(),
+              AllIcons.Actions.Close.getIconWidth(),
+              AllIcons.Actions.Close.getIconHeight());
+      myCloseBounds.add(new CloseBounds(bounds, "hi", ""));
+
+      return y;
     }
 
     private int drawHist(Graphics g, int y, Sputnik.HistUi hist, boolean dryRun) {
