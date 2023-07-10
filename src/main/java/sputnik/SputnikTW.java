@@ -144,10 +144,10 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
     private int drawHi(Graphics g, int y, Sputnik.HiUi hi) {
       int heightPx = 2;
       int widthPx = 2;
-      g.setColor(JBColor.BLACK);
       g.drawRect(10, y, widthPx * 100, heightPx * 100);
       float scale = 100.0f / hi.myMaxPercent;
       int yStart = y;
+      g.setColor(JBColor.GRAY);
       g.drawLine(
               10 + widthPx * 25, yStart,
               10 + widthPx * 25, yStart + heightPx * 100);
@@ -158,18 +158,12 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
               10 + widthPx * 75, yStart,
               10 + widthPx * 75, yStart + heightPx * 100);
 
-      g.setColor(JBColor.RED);
-      for (float i : hi.myHist) {
-        g.fillRect(10, y, widthPx * (int) (i * scale), heightPx);
-        y += heightPx;
-      }
-
-      long width = hi.myMax - hi.myMin;
-      long step;
-      if (width > 10) {
-        step = width / 10;
+      long height = hi.myMax - hi.myMin;
+      double step;
+      if (height >= 10) {
+        step = (double) height / 10;
       } else {
-        step = 1;
+        step = 1.0;
       }
 
       // draw first label with text layout to get bounds, needed for close icon
@@ -179,12 +173,22 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       tl.draw((Graphics2D) g, labelsXOffset, yStart + 5);
       Rectangle2D bounds = tl.getBounds();
 
+      long prev = hi.myMin;
       for (int i = 1; i <= 10; i++) {
-        long val = hi.myMin + i * step;
+        long val = (long) (prev + step);
         if (val > hi.myMax) {
           break;
         }
-        g.drawString("" + val, labelsXOffset, yStart + 5 + i * heightPx * 10);
+        float part = (float) ((val - hi.myMin) * 1.0 / height);
+        int tickY = yStart + (int) (part * heightPx * 100);
+        g.drawString("" + val, labelsXOffset, tickY + 5);
+        prev = val;
+      }
+
+      g.setColor(JBColor.RED);
+      for (float i : hi.myHist) {
+        g.fillRect(10, y, widthPx * (int) (i * scale), heightPx);
+        y += heightPx;
       }
 
       AllIcons.Actions.Close.paintIcon(this, g,
