@@ -5,12 +5,11 @@
 
     <idea-version since-build="231"/>
 
-    <version>2</version>
+    <version>3</version>
 
     <change-notes><![CDATA[
     <ul>
-      <li>Handle split lines in program output, so that no command is missing</li>
-      <li>Ability to draw a chart using the 'c' command</li>
+      <li>Added histogram of integers</li>
     </ul>
     ]]>
     </change-notes>
@@ -21,7 +20,7 @@
         Parses program console output, detects lines in a special format, and builds a histogram shown in a dedicated tool window.<br/>
 
         Commands have the format '0x01cmd(args)\n', i.e. byte 1 followed by a command name and command arguments in parentheses.
-        In java one can print a command like this: System.out.println("\01h('Histogram name','bucket name')").<br/>
+        In java one can print a command like this: System.out.println("\1h('Histogram name','bucket name')").<br/>
 
         Supported commands:<br/>
 
@@ -30,7 +29,11 @@
 
         c('chartName','counterName') - adds 1 to the counter with the given name in the given chart<br/><br/>
 
-        A lot of printing will slow down the program, so it is suitable only for quick experiments.<br/>
+        Hi(123) - adds 123 to the integer histogram<br/><br/>
+
+        <b>A lot of printing will slow down the program, so it is suitable only for quick experiments.</b><br/>
+
+        To make processing a bit faster, clear the folding patterns at 'File | Settings | Editor | General | Console'<br/>
     ]]></description>
 
     <depends>com.intellij.modules.lang</depends>
