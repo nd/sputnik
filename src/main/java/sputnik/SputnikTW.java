@@ -145,18 +145,43 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       int heightPx = 2;
       int widthPx = 2;
       g.drawRect(10, y, widthPx * 100, heightPx * 100);
-      float scale = 100.0f / hi.myMaxPercent;
+      float scale = 1.0f;//100.0f / hi.myMaxPercent;
       int yStart = y;
       g.setColor(JBColor.GRAY);
+
+      Stroke dashedStroke = new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[]{3}, 0);
+      Stroke defaultStroke = ((Graphics2D) g).getStroke();
+      Stroke[] strokes = new Stroke[]{dashedStroke, defaultStroke};
+      int strokeIdx = 0;
+
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
       g.drawLine(
               10 + widthPx * 25, yStart,
               10 + widthPx * 25, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
       g.drawLine(
               10 + widthPx * 50, yStart,
               10 + widthPx * 50, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
       g.drawLine(
               10 + widthPx * 75, yStart,
               10 + widthPx * 75, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 90, yStart,
+              10 + widthPx * 90, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 99, yStart,
+              10 + widthPx * 99, yStart + heightPx * 100);
+
+      g.setColor(JBColor.BLACK);
+
+      g.drawString("25", 5 + widthPx * 25, yStart);
+      g.drawString("50", 5 + widthPx * 50, yStart);
+      g.drawString("75", 5 + widthPx * 75, yStart);
+      g.drawString("90", 5 + widthPx * 90, yStart);
+      g.drawString("99", 5 + widthPx * 99, yStart);
 
       long height = hi.myMax - hi.myMin;
       double step;
@@ -173,23 +198,32 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       tl.draw((Graphics2D) g, labelsXOffset, yStart + 5);
       Rectangle2D bounds = tl.getBounds();
 
-      long prev = hi.myMin;
-      for (int i = 1; i <= 10; i++) {
-        long val = (long) (prev + step);
-        if (val > hi.myMax) {
-          break;
+      strokeIdx = 0;
+      int[] percentiles = new int[]{25, 50, 75, 90, 99, 101};
+      int percIdx = 0;
+      g.setColor(JBColor.RED);
+      float x = 0;
+      for (int i = 0; i < hi.myHist.length; i++) {
+        float percent = hi.myHist[i];
+        g.fillRect(10, y, widthPx * (int) (x * scale), heightPx);
+        y += heightPx;
+        x += percent;
+        if (percIdx < percentiles.length && x >= percentiles[percIdx]) {
+          g.setColor(JBColor.GRAY);
+          ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+          g.drawLine(
+                  10 + widthPx * (int)x, y,
+                  10 + widthPx * 100, y);
+          g.setColor(JBColor.BLACK);
+          g.drawString((long)(hi.myMin + height * i * 0.01) + " (" + percentiles[percIdx] + "%)", labelsXOffset, y + 5);
+          g.setColor(JBColor.RED);
+          ((Graphics2D) g).setStroke(defaultStroke);
+          percIdx++;
         }
-        float part = (float) ((val - hi.myMin) * 1.0 / height);
-        int tickY = yStart + (int) (part * heightPx * 100);
-        g.drawString("" + val, labelsXOffset, tickY + 5);
-        prev = val;
       }
 
-      g.setColor(JBColor.RED);
-      for (float i : hi.myHist) {
-        g.fillRect(10, y, widthPx * (int) (i * scale), heightPx);
-        y += heightPx;
-      }
+      g.setColor(JBColor.BLACK);
+      g.drawString("" + hi.myMax, labelsXOffset, y + 15);
 
       AllIcons.Actions.Close.paintIcon(this, g,
               (int) (labelsXOffset + bounds.getWidth()),
