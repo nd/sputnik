@@ -5,7 +5,6 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.ui.JBColor;
@@ -55,7 +54,8 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
     private final Font myFont;
     private final Font myBoldFont;
     private final List<CloseBounds> myCloseBounds = new ArrayList<>();
-
+    private final List<ActionBounds> myActionBounds = new ArrayList<>();
+    private volatile boolean myDrawHiCumulative = false;
 
     public SputnikPanel(@NotNull ToolWindow tw, @NotNull Sputnik sputnik) {
       myTw = tw;
@@ -80,7 +80,14 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
                 }
                 scheduleRepaint();
               });
-              break;
+              return;
+            }
+          }
+          for (ActionBounds b : myActionBounds) {
+            if (b.rect.contains(point)) {
+              b.action.run();
+              scheduleRepaint();
+              return;
             }
           }
         }
@@ -123,6 +130,7 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
       }
 
       myCloseBounds.clear();
+      myActionBounds.clear();
 
       y = 30;
       for (Sputnik.HistUi hist : myHists) {
@@ -142,6 +150,10 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
     }
 
     private int drawHi(Graphics g, int y, Sputnik.HiUi hi) {
+      if (myDrawHiCumulative) {
+        return drawHiCumulative(g, y, hi);
+      }
+
       int heightPx = 2;
       int widthPx = 2;
       g.drawRect(10, y, widthPx * 100, heightPx * 100);
@@ -201,6 +213,105 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
               AllIcons.Actions.Close.getIconWidth(),
               AllIcons.Actions.Close.getIconHeight());
       myCloseBounds.add(new CloseBounds(bounds, "hi", ""));
+
+      myActionBounds.add(new ActionBounds(new Rectangle2D.Float(10, yStart, widthPx * 100, heightPx * 100), () -> {
+        myDrawHiCumulative = true;
+      }));
+
+      return y;
+    }
+
+    private int drawHiCumulative(Graphics g, int y, Sputnik.HiUi hi) {
+      int heightPx = 2;
+      int widthPx = 2;
+      g.drawRect(10, y, widthPx * 100, heightPx * 100);
+      float scale = 1.0f;
+      int yStart = y;
+      g.setColor(JBColor.GRAY);
+
+      Stroke dashedStroke = new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[]{3}, 0);
+      Stroke defaultStroke = ((Graphics2D) g).getStroke();
+      Stroke[] strokes = new Stroke[]{dashedStroke, defaultStroke};
+      int strokeIdx = 0;
+
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 25, yStart,
+              10 + widthPx * 25, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 50, yStart,
+              10 + widthPx * 50, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 75, yStart,
+              10 + widthPx * 75, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 90, yStart,
+              10 + widthPx * 90, yStart + heightPx * 100);
+      ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+      g.drawLine(
+              10 + widthPx * 99, yStart,
+              10 + widthPx * 99, yStart + heightPx * 100);
+
+      g.setColor(JBColor.BLACK);
+
+      g.drawString("25", 5 + widthPx * 25, yStart);
+      g.drawString("50", 5 + widthPx * 50, yStart);
+      g.drawString("75", 5 + widthPx * 75, yStart);
+      g.drawString("90", 5 + widthPx * 90, yStart);
+      g.drawString("99", 5 + widthPx * 99, yStart);
+
+      long height = hi.myMax - hi.myMin;
+
+      // draw first label with text layout to get bounds, needed for close icon
+      int labelsXOffset = 10 + widthPx * 100 + 10;
+      TextLayout tl = new TextLayout("" + hi.myMin, myFont, ((Graphics2D) g).getFontRenderContext());
+      tl.draw((Graphics2D) g, labelsXOffset, yStart + 5);
+      Rectangle2D bounds = tl.getBounds();
+
+      strokeIdx = 0;
+      int[] percentiles = new int[]{25, 50, 75, 90, 99, 101};
+      int percIdx = 0;
+      g.setColor(JBColor.RED);
+      float x = 0;
+      for (int i = 0; i < hi.myHist.length; i++) {
+        float percent = hi.myHist[i];
+        g.fillRect(10, y, widthPx * (int) (x * scale), heightPx);
+        y += heightPx;
+        x += percent;
+        if (percIdx < percentiles.length && x >= percentiles[percIdx]) {
+          g.setColor(JBColor.GRAY);
+          ((Graphics2D) g).setStroke(strokes[strokeIdx++ % strokes.length]);
+          g.drawLine(
+                  10 + widthPx * (int)x, y,
+                  10 + widthPx * 100, y);
+          g.setColor(JBColor.BLACK);
+          g.drawString((long)(hi.myMin + height * i * 0.01) + " (" + percentiles[percIdx] + "%)", labelsXOffset, y + 5);
+          g.setColor(JBColor.RED);
+          ((Graphics2D) g).setStroke(defaultStroke);
+          percIdx++;
+        }
+      }
+
+      g.setColor(JBColor.BLACK);
+      g.drawString("" + hi.myMax, labelsXOffset, y + 15);
+
+      AllIcons.Actions.Close.paintIcon(this, g,
+              (int) (labelsXOffset + bounds.getWidth()),
+              yStart - AllIcons.Actions.Close.getIconHeight());
+
+      bounds.setRect(
+              labelsXOffset + bounds.getWidth(),
+              yStart - AllIcons.Actions.Close.getIconHeight(),
+              AllIcons.Actions.Close.getIconWidth(),
+              AllIcons.Actions.Close.getIconHeight());
+      myCloseBounds.add(new CloseBounds(bounds, "hi", ""));
+
+      myActionBounds.add(new ActionBounds(new Rectangle2D.Float(10, yStart, widthPx * 100, heightPx * 100), () -> {
+        myDrawHiCumulative = false;
+      }));
 
       return y;
     }
@@ -336,6 +447,16 @@ public class SputnikTW implements ToolWindowFactory, DumbAware {
         this.rect = rect;
         this.type = type;
         this.name = name;
+      }
+    }
+
+    static class ActionBounds {
+      private final Rectangle2D rect;
+      private final Runnable action;
+
+      public ActionBounds(@NotNull Rectangle2D rect, @NotNull Runnable action) {
+        this.rect = rect;
+        this.action = action;
       }
     }
   }
