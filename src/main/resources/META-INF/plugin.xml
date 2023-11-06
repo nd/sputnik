@@ -5,11 +5,11 @@
 
     <idea-version since-build="231"/>
 
-    <version>4</version>
+    <version>5</version>
 
     <change-notes><![CDATA[
     <ul>
-      <li>Better drawing of integer histogram</li>
+      <li>Now it is possible to see cumulative distribution for integer histograms by clicking on it</li>
     </ul>
     ]]>
     </change-notes>
